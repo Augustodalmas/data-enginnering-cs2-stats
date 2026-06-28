@@ -1,0 +1,17 @@
+name: cs2
+version: '1.0.0'
+config-version: 2
+
+profile: cs2
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+
+models:
+  cs2:
+    silver:
+      +schema: silver
+      +materialized: incremental
+    gold:
+      +schema: gold
+      +materialized: incremental

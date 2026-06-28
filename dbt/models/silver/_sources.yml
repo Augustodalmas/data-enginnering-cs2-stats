@@ -1,0 +1,15 @@
+version: 2
+
+sources:
+  - name: bronze
+    schema: bronze
+    tables:
+      - name: header
+      - name: rounds
+      - name: kills
+      - name: damages
+      - name: grenades
+      - name: shots
+      - name: bomb
+      - name: ticks
+      - name: cvars
