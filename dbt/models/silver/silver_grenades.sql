@@ -26,6 +26,9 @@ SELECT
     _carregado_em::TIMESTAMP AS _carregado_em,
     NOW()                    AS _transformado_em
 FROM {{ source('bronze', 'grenades') }}
+-- Exclui entidades que não são granadas (CKnife, CWeaponGlock): artefato de
+-- parsing do awpy observado numa demo/round específico, não granada real.
+WHERE NULLIF(TRIM(grenade_type), '') NOT IN ('CKnife', 'CWeaponGlock')
 {% if is_incremental() %}
-WHERE match_id NOT IN (SELECT DISTINCT match_id FROM {{ this }})
+AND match_id NOT IN (SELECT DISTINCT match_id FROM {{ this }})
 {% endif %}

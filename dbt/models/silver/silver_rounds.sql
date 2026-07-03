@@ -10,22 +10,29 @@
     }
 ) }}
 
+WITH taxa AS (
+    {{ taxa_de_tick_por_partida() }}
+)
+
 SELECT
-    NULLIF(TRIM(round_num), '')::INTEGER    AS round_num,
-    NULLIF(TRIM(start), '')::INTEGER        AS start,
-    NULLIF(TRIM(freeze_end), '')::INTEGER   AS freeze_end,
-    NULLIF(TRIM("end"), '')::INTEGER        AS "end",
-    NULLIF(TRIM(official_end), '')::INTEGER AS official_end,
-    NULLIF(TRIM(bomb_plant), '')::INTEGER   AS bomb_plant,
-    NULLIF(TRIM(winner), '')::VARCHAR       AS winner,
-    NULLIF(TRIM(reason), '')::VARCHAR       AS reason,
-    NULLIF(TRIM(bomb_site), '')::VARCHAR    AS bomb_site,
-    match_id,
-    _arquivo_origem,
+    NULLIF(TRIM(b.round_num), '')::INTEGER    AS round_num,
+    NULLIF(TRIM(b.start), '')::INTEGER        AS start,
+    NULLIF(TRIM(b.freeze_end), '')::INTEGER   AS freeze_end,
+    NULLIF(TRIM(b."end"), '')::INTEGER        AS "end",
+    NULLIF(TRIM(b.official_end), '')::INTEGER AS official_end,
+    NULLIF(TRIM(b.bomb_plant), '')::INTEGER   AS bomb_plant,
+    NULLIF(TRIM(b.winner), '')::VARCHAR       AS winner,
+    NULLIF(TRIM(b.reason), '')::VARCHAR       AS reason,
+    NULLIF(TRIM(b.bomb_site), '')::VARCHAR    AS bomb_site,
+    (NULLIF(TRIM(b."end"), '')::INTEGER - NULLIF(TRIM(b.start), '')::INTEGER)
+        / t.taxa_de_tick                        AS duracao_segundos,
+    b.match_id,
+    b._arquivo_origem,
     'silver'                 AS _camada,
-    _carregado_em::TIMESTAMP AS _carregado_em,
+    b._carregado_em::TIMESTAMP AS _carregado_em,
     NOW()                    AS _transformado_em
-FROM {{ source('bronze', 'rounds') }}
+FROM {{ source('bronze', 'rounds') }} b
+LEFT JOIN taxa t ON t.match_id = b.match_id
 {% if is_incremental() %}
-WHERE match_id NOT IN (SELECT DISTINCT match_id FROM {{ this }})
+WHERE b.match_id NOT IN (SELECT DISTINCT match_id FROM {{ this }})
 {% endif %}

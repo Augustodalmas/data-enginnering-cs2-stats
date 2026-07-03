@@ -5,5 +5,8 @@ __pycache__/
 *.pyc
 .claude
 CLAUDE.md
+dbt/target/
+dbt/logs/
+dbt/dbt_packages/
+dbt/.user.yml
 cs2_data_pipeline_medallion.svg
-

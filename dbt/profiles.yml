@@ -1,0 +1,7 @@
+cs2:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: "{{ env_var('CS2_DUCKDB_PATH', '../output/cs2.duckdb') }}"
+      schema: main

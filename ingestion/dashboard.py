@@ -66,6 +66,7 @@ with aba_combate:
         mortes=("mortes", "sum"),
         assistencias=("assistencias", "sum"),
         headshots=("headshots", "sum"),
+        team_kills=("team_kills", "sum"),
         dano_causado=("dano_causado", "sum"),
         dano_recebido=("dano_recebido", "sum"),
     ).sort_values("kills", ascending=False)
@@ -79,6 +80,11 @@ with aba_combate:
         st.subheader("Dano causado")
         st.bar_chart(ranking.set_index("nome")["dano_causado"])
     st.dataframe(ranking, use_container_width=True)
+
+    fogo_amigo = ranking[ranking["team_kills"] > 0].sort_values("team_kills", ascending=False)
+    if not fogo_amigo.empty:
+        st.subheader("Fogo amigo (team-kills)")
+        st.bar_chart(fogo_amigo.set_index("nome")["team_kills"])
 
 with aba_granadas:
     ranking_g = granadas_f.groupby(["nome", "categoria_granada"], as_index=False)["granadas_lancadas"].sum()

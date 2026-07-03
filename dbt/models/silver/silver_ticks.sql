@@ -10,23 +10,35 @@
     }
 ) }}
 
+WITH taxa AS (
+    {{ taxa_de_tick_por_partida() }}
+),
+inicio_round AS (
+    {{ round_start_por_partida() }}
+)
+
 SELECT
-    NULLIF(TRIM(tick), '')::INTEGER      AS tick,
-    NULLIF(TRIM(round_num), '')::INTEGER AS round_num,
-    NULLIF(TRIM(health), '')::INTEGER    AS health,
-    NULLIF(TRIM(steamid), '')::BIGINT    AS steamid,
-    NULLIF(TRIM(name), '')::VARCHAR      AS name,
-    NULLIF(TRIM(side), '')::VARCHAR      AS side,
-    NULLIF(TRIM(place), '')::VARCHAR     AS place,
-    NULLIF(TRIM(X), '')::DOUBLE          AS X,
-    NULLIF(TRIM(Y), '')::DOUBLE          AS Y,
-    NULLIF(TRIM(Z), '')::DOUBLE          AS Z,
-    match_id,
-    _arquivo_origem,
+    NULLIF(TRIM(b.tick), '')::INTEGER      AS tick,
+    NULLIF(TRIM(b.round_num), '')::INTEGER AS round_num,
+    (NULLIF(TRIM(b.tick), '')::INTEGER - ir.round_start_tick)
+        / t.taxa_de_tick                     AS segundos_desde_inicio_round,
+    NULLIF(TRIM(b.health), '')::INTEGER    AS health,
+    NULLIF(TRIM(b.steamid), '')::BIGINT    AS steamid,
+    NULLIF(TRIM(b.name), '')::VARCHAR      AS name,
+    NULLIF(TRIM(b.side), '')::VARCHAR      AS side,
+    NULLIF(TRIM(b.place), '')::VARCHAR     AS place,
+    NULLIF(TRIM(b.X), '')::DOUBLE          AS X,
+    NULLIF(TRIM(b.Y), '')::DOUBLE          AS Y,
+    NULLIF(TRIM(b.Z), '')::DOUBLE          AS Z,
+    b.match_id,
+    b._arquivo_origem,
     'silver'                 AS _camada,
-    _carregado_em::TIMESTAMP AS _carregado_em,
+    b._carregado_em::TIMESTAMP AS _carregado_em,
     NOW()                    AS _transformado_em
-FROM {{ source('bronze', 'ticks') }}
+FROM {{ source('bronze', 'ticks') }} b
+LEFT JOIN inicio_round ir ON ir.match_id = b.match_id
+    AND ir.round_num = NULLIF(TRIM(b.round_num), '')::INTEGER
+LEFT JOIN taxa t ON t.match_id = b.match_id
 {% if is_incremental() %}
-WHERE match_id NOT IN (SELECT DISTINCT match_id FROM {{ this }})
+WHERE b.match_id NOT IN (SELECT DISTINCT match_id FROM {{ this }})
 {% endif %}

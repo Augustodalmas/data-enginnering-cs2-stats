@@ -1,0 +1,605 @@
+version: 2
+
+models:
+  - name: silver_header
+    description: >
+      Metadados da demo (1 linha por partida): mapa, versão, servidor.
+      Cast tipado da bronze, sem transformação de negócio.
+    columns:
+      - name: match_id
+        description: "{{ doc('col_match_id') }}"
+        tests:
+          - not_null
+          - unique
+      - name: map_name
+        description: "Nome do mapa jogado (ex.: `de_mirage`)."
+        tests:
+          - not_null
+      - name: server_name
+        description: "Nome do servidor que gerou a demo."
+      - name: client_name
+        description: "Tipo de gravação (ex.: `SourceTV Demo` = demo de GOTV/broadcast)."
+      - name: demo_version_name
+        description: "Versão do formato da demo (nome)."
+      - name: demo_version_guid
+        description: "Versão do formato da demo (GUID)."
+      - name: patch_version
+        description: "Versão do patch do jogo no momento da partida."
+      - name: game_directory
+        description: "Caminho do servidor que gerou a demo (informação do ambiente, não do jogo)."
+      - name: demo_file_stamp
+        description: "Assinatura interna do arquivo da demo."
+      - name: addons
+        description: "Metadado técnico de baixo nível, normalmente sem uso analítico."
+      - name: allow_clientside_entities
+        description: "Metadado técnico de baixo nível, normalmente sem uso analítico."
+      - name: allow_clientside_particles
+        description: "Metadado técnico de baixo nível, normalmente sem uso analítico."
+      - name: fullpackets_version
+        description: "Metadado técnico de baixo nível, normalmente sem uso analítico."
+      - name: _arquivo_origem
+        description: "{{ doc('col_arquivo_origem') }}"
+      - name: _camada
+        description: "{{ doc('col_camada') }}"
+      - name: _carregado_em
+        description: "{{ doc('col_carregado_em') }}"
+      - name: _transformado_em
+        description: "{{ doc('col_transformado_em') }}"
+
+  - name: silver_rounds
+    description: >
+      Ciclo de vida de cada round (1 linha por round): ticks de início/fim,
+      vencedor, motivo, plant da bomba, e `duracao_segundos` (derivada, ver
+      taxa_de_tick_por_partida()). Grão: match_id + round_num.
+    columns:
+      - name: round_num
+        description: "{{ doc('col_round_num') }}"
+        tests:
+          - not_null
+      - name: start
+        description: "Tick em que o round começou (inclui o freeze time)."
+        tests:
+          - not_null
+      - name: freeze_end
+        description: "Tick em que o freeze time (tempo de compra) terminou."
+      - name: "end"
+        description: "Tick em que o round foi decidido (kill final, bomba explodiu, tempo esgotou, etc.)."
+        quote: true
+        tests:
+          - not_null
+      - name: official_end
+        description: "Tick em que o round foi oficialmente encerrado pelo servidor (pode incluir ticks extras após `end`, ex.: exibição do resultado)."
+        tests:
+          - not_null
+      - name: bomb_plant
+        description: "Tick em que a bomba foi plantada nesse round (`NULL` se não foi plantada)."
+      - name: winner
+        description: "Lado vencedor do round: `\"t\"` ou `\"ct\"` (lado, não nome do time — times trocam de lado)."
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['t', 'ct']
+      - name: reason
+        description: "Motivo do fim do round."
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['t_killed', 'ct_killed', 'bomb_defused', 'bomb_exploded', 'time_ran_out']
+      - name: bomb_site
+        description: "Local do plant nesse round: `bombsite_a`, `bombsite_b`, ou `not_planted`."
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['bombsite_a', 'bombsite_b', 'not_planted']
+      - name: duracao_segundos
+        description: >
+          Duração do round em segundos, `(end - start) / taxa_de_tick`.
+          Atenção: o round pós-troca-de-lado (ex.: round 13 num MR12) vem
+          com duração muito maior que o normal, pois inclui a pausa entre
+          lados — tratar como outlier em estatísticas de duração média.
+        tests:
+          - not_null
+      - name: match_id
+        description: "{{ doc('col_match_id') }}"
+        tests:
+          - not_null
+      - name: _arquivo_origem
+        description: "{{ doc('col_arquivo_origem') }}"
+      - name: _camada
+        description: "{{ doc('col_camada') }}"
+      - name: _carregado_em
+        description: "{{ doc('col_carregado_em') }}"
+      - name: _transformado_em
+        description: "{{ doc('col_transformado_em') }}"
+
+  - name: silver_kills
+    description: >
+      Cada abate (1 linha por kill): quem matou, quem morreu, arma,
+      posição XYZ, headshot, distância, callouts. Inclui
+      `segundos_desde_inicio_round` (derivada). Exclui eventos de reinício de
+      round/pausa técnica (2+ jogadores "matando a si mesmos" com
+      `weapon = 'world'` no mesmo tick) — artefato do servidor, não morte de
+      jogo real (ver teste `assert_sem_artefato_reinicio_em_kills`). Ainda
+      inclui team-kills (fogo amigo) como linhas normais — a decisão de
+      contar ou não como "kill" fica na camada gold
+      (`combate_jogador_partida`), não aqui.
+    columns:
+      - name: attacker_name
+        description: "{{ doc('col_participante_nome') }}"
+      - name: attacker_steamid
+        description: >
+          {{ doc('col_participante_steamid') }} Pode ser `NULL`: mortes sem
+          atacante humano (ex.: dano de bomba plantada, `weapon =
+          'planted_c4'`) não têm atacante.
+      - name: attacker_side
+        description: "{{ doc('col_participante_side') }} Pode ser `NULL` quando não há atacante (ver `attacker_steamid`)."
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['t', 'ct']
+      - name: attacker_X
+        description: "{{ doc('col_participante_posicao') }}"
+      - name: attacker_Y
+        description: "{{ doc('col_participante_posicao') }}"
+      - name: attacker_Z
+        description: "{{ doc('col_participante_posicao') }}"
+      - name: attacker_health
+        description: "{{ doc('col_participante_health') }}"
+      - name: attacker_place
+        description: "{{ doc('col_participante_place') }}"
+      - name: victim_name
+        description: "{{ doc('col_participante_nome') }}"
+      - name: victim_steamid
+        description: "{{ doc('col_participante_steamid') }}"
+        tests:
+          - not_null
+      - name: victim_side
+        description: "{{ doc('col_participante_side') }}"
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['t', 'ct']
+      - name: victim_X
+        description: "{{ doc('col_participante_posicao') }}"
+      - name: victim_Y
+        description: "{{ doc('col_participante_posicao') }}"
+      - name: victim_Z
+        description: "{{ doc('col_participante_posicao') }}"
+      - name: victim_health
+        description: "{{ doc('col_participante_health') }}"
+      - name: victim_place
+        description: "{{ doc('col_participante_place') }}"
+      - name: assister_name
+        description: "{{ doc('col_participante_nome') }} Nulo quando não houve assistência."
+      - name: assister_steamid
+        description: "{{ doc('col_participante_steamid') }} Nulo quando não houve assistência."
+      - name: assister_side
+        description: "{{ doc('col_participante_side') }} Nulo quando não houve assistência."
+      - name: assister_X
+        description: "{{ doc('col_participante_posicao') }} Nulo quando não houve assistência."
+      - name: assister_Y
+        description: "{{ doc('col_participante_posicao') }} Nulo quando não houve assistência."
+      - name: assister_Z
+        description: "{{ doc('col_participante_posicao') }} Nulo quando não houve assistência."
+      - name: assister_health
+        description: "{{ doc('col_participante_health') }} Nulo quando não houve assistência."
+      - name: assister_place
+        description: "{{ doc('col_participante_place') }} Nulo quando não houve assistência."
+      - name: tick
+        description: "{{ doc('col_tick') }}"
+        tests:
+          - not_null
+      - name: round_num
+        description: "{{ doc('col_round_num') }}"
+        tests:
+          - not_null
+      - name: segundos_desde_inicio_round
+        description: "{{ doc('col_segundos_desde_inicio_round') }}"
+      - name: assistedflash
+        description: "`True` se a assistência foi via flashbang (assister cegou a vítima)."
+      - name: weapon
+        description: "{{ doc('col_weapon') }}"
+        tests:
+          - not_null
+      - name: weapon_itemid
+        description: "ID interno do item/skin da arma (rastreamento de economia, raramente necessário em análise)."
+      - name: weapon_fauxitemid
+        description: "ID interno do item/skin da arma (rastreamento de economia, raramente necessário em análise)."
+      - name: weapon_originalowner_xuid
+        description: "SteamID do dono original da arma (relevante quando a arma foi pega de outro jogador morto)."
+      - name: headshot
+        description: "`True` se o abate foi headshot."
+        tests:
+          - not_null
+      - name: hitgroup
+        description: "Parte do corpo atingida no tiro fatal (`-1` quando não aplicável, ex.: morte por bomba/queda)."
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['head', 'chest', 'stomach', 'left_arm', 'right_arm', 'left_leg', 'right_leg', 'neck', 'generic', '-1']
+      - name: distance
+        description: "Distância entre atacante e vítima no momento do abate."
+      - name: dmg_armor
+        description: "Dano causado à armadura no tiro fatal."
+      - name: dmg_health
+        description: "Dano bruto causado à vida no tiro fatal (não limitado pela vida restante — ver `dmg_health_real` em damages)."
+      - name: penetrated
+        description: "Quantas superfícies (parede, etc.) o tiro atravessou antes de acertar."
+      - name: noscope
+        description: "`True` se foi um abate com sniper sem estar mirando (scope)."
+      - name: thrusmoke
+        description: "`True` se o tiro atravessou fumaça."
+      - name: attackerblind
+        description: "`True` se o atacante estava cego (flashado) no momento do tiro."
+      - name: attackerinair
+        description: "`True` se o atacante estava no ar (saltando) no momento do tiro."
+      - name: noreplay
+        description: "Flag interna de elegibilidade pra replay/highlight (raramente útil em análise)."
+      - name: dominated
+        description: "`True` quando esse abate gera \"domination\" (3+ abates seguidos sem o atacante morrer pra essa vítima na partida)."
+      - name: revenge
+        description: "`True` quando esse abate é uma \"vingança\" (vítima havia matado o atacante antes na partida)."
+      - name: wipe
+        description: "Contador de quantos abates seguidos o atacante fez nesse round sem morrer (acumula até um \"ace\")."
+      - name: ct_side
+        description: "{{ doc('col_ct_side') }}"
+      - name: t_side
+        description: "{{ doc('col_t_side') }}"
+      - name: match_id
+        description: "{{ doc('col_match_id') }}"
+        tests:
+          - not_null
+      - name: _arquivo_origem
+        description: "{{ doc('col_arquivo_origem') }}"
+      - name: _camada
+        description: "{{ doc('col_camada') }}"
+      - name: _carregado_em
+        description: "{{ doc('col_carregado_em') }}"
+      - name: _transformado_em
+        description: "{{ doc('col_transformado_em') }}"
+
+  - name: silver_damages
+    description: >
+      Cada evento de dano, inclusive o que não mata (1 linha por evento).
+      Inclui `segundos_desde_inicio_round` (derivada).
+    columns:
+      - name: attacker_name
+        description: "{{ doc('col_participante_nome') }}"
+      - name: attacker_steamid
+        description: "{{ doc('col_participante_steamid') }} Pode ser `NULL` (ex.: dano de bomba plantada)."
+      - name: attacker_side
+        description: "{{ doc('col_participante_side') }}"
+      - name: attacker_X
+        description: "{{ doc('col_participante_posicao') }}"
+      - name: attacker_Y
+        description: "{{ doc('col_participante_posicao') }}"
+      - name: attacker_Z
+        description: "{{ doc('col_participante_posicao') }}"
+      - name: attacker_health
+        description: "{{ doc('col_participante_health') }}"
+      - name: attacker_place
+        description: "{{ doc('col_participante_place') }}"
+      - name: victim_name
+        description: "{{ doc('col_participante_nome') }}"
+      - name: victim_steamid
+        description: "{{ doc('col_participante_steamid') }}"
+        tests:
+          - not_null
+      - name: victim_side
+        description: "{{ doc('col_participante_side') }}"
+      - name: victim_X
+        description: "{{ doc('col_participante_posicao') }}"
+      - name: victim_Y
+        description: "{{ doc('col_participante_posicao') }}"
+      - name: victim_Z
+        description: "{{ doc('col_participante_posicao') }}"
+      - name: victim_health
+        description: "{{ doc('col_participante_health') }}"
+      - name: victim_place
+        description: "{{ doc('col_participante_place') }}"
+      - name: tick
+        description: "{{ doc('col_tick') }}"
+      - name: round_num
+        description: "{{ doc('col_round_num') }}"
+      - name: segundos_desde_inicio_round
+        description: "{{ doc('col_segundos_desde_inicio_round') }}"
+      - name: armor
+        description: "Armadura restante da vítima após o dano."
+      - name: health
+        description: "Vida restante da vítima após o dano."
+      - name: dmg_armor
+        description: "Dano bruto causado à armadura nesse evento."
+      - name: dmg_health
+        description: "Dano bruto causado à vida nesse evento (pode exceder a vida restante da vítima — ver `dmg_health_real`)."
+      - name: dmg_health_real
+        description: >
+          Dano efetivo de vida nesse evento, limitado pela vida que a
+          vítima ainda tinha (evita "dano fantasma" maior que a vida
+          restante). Usado nos agregados de dano da gold.
+        tests:
+          - not_null
+      - name: weapon
+        description: "{{ doc('col_weapon') }}"
+      - name: hitgroup
+        description: "Parte do corpo atingida nesse evento de dano."
+      - name: ct_side
+        description: "{{ doc('col_ct_side') }}"
+      - name: t_side
+        description: "{{ doc('col_t_side') }}"
+      - name: match_id
+        description: "{{ doc('col_match_id') }}"
+        tests:
+          - not_null
+      - name: _arquivo_origem
+        description: "{{ doc('col_arquivo_origem') }}"
+      - name: _camada
+        description: "{{ doc('col_camada') }}"
+      - name: _carregado_em
+        description: "{{ doc('col_carregado_em') }}"
+      - name: _transformado_em
+        description: "{{ doc('col_transformado_em') }}"
+
+  - name: silver_shots
+    description: >
+      Cada disparo de arma (1 linha por tiro). Inclui
+      `segundos_desde_inicio_round` (derivada).
+    columns:
+      - name: player_name
+        description: "{{ doc('col_participante_nome') }}"
+      - name: player_steamid
+        description: "{{ doc('col_participante_steamid') }}"
+        tests:
+          - not_null
+      - name: player_side
+        description: "{{ doc('col_participante_side') }}"
+      - name: player_X
+        description: "{{ doc('col_participante_posicao') }}"
+      - name: player_Y
+        description: "{{ doc('col_participante_posicao') }}"
+      - name: player_Z
+        description: "{{ doc('col_participante_posicao') }}"
+      - name: player_health
+        description: "{{ doc('col_participante_health') }}"
+      - name: player_place
+        description: "{{ doc('col_participante_place') }}"
+      - name: tick
+        description: "{{ doc('col_tick') }}"
+      - name: round_num
+        description: "{{ doc('col_round_num') }}"
+      - name: segundos_desde_inicio_round
+        description: "{{ doc('col_segundos_desde_inicio_round') }}"
+      - name: weapon
+        description: "{{ doc('col_weapon') }} (arma disparada)."
+        tests:
+          - not_null
+      - name: ct_side
+        description: "{{ doc('col_ct_side') }}"
+      - name: t_side
+        description: "{{ doc('col_t_side') }}"
+      - name: silenced
+        description: "`True` se a arma estava com silenciador equipado."
+      - name: match_id
+        description: "{{ doc('col_match_id') }}"
+        tests:
+          - not_null
+      - name: _arquivo_origem
+        description: "{{ doc('col_arquivo_origem') }}"
+      - name: _camada
+        description: "{{ doc('col_camada') }}"
+      - name: _carregado_em
+        description: "{{ doc('col_carregado_em') }}"
+      - name: _transformado_em
+        description: "{{ doc('col_transformado_em') }}"
+
+  - name: silver_bomb
+    description: >
+      Eventos da bomba: pickup, drop, plant, defuse, detonate (1 linha por
+      evento). Inclui `segundos_desde_inicio_round` (derivada).
+    columns:
+      - name: tick
+        description: "{{ doc('col_tick') }}"
+        tests:
+          - not_null
+      - name: round_num
+        description: "{{ doc('col_round_num') }}"
+        tests:
+          - not_null
+      - name: segundos_desde_inicio_round
+        description: "{{ doc('col_segundos_desde_inicio_round') }}"
+      - name: event
+        description: "Tipo do evento: `pickup` (pegou a bomba), `drop` (largou), `plant` (plantou), `defuse` (defusou), `detonate` (explodiu)."
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['pickup', 'drop', 'plant', 'defuse', 'detonate']
+      - name: bombsite
+        description: >
+          Site relacionado ao evento (`BombsiteA`/`BombsiteB`), quando
+          aplicável — `NULL` em eventos sem site associado (ex.: pickup,
+          drop, detonate). Atenção: grafia distinta de
+          `rounds.bomb_site` (`bombsite_a`/`bombsite_b`, minúsculo) — mesmo
+          conceito, casing diferente entre as duas colunas.
+      - name: name
+        description: "{{ doc('col_participante_nome') }}"
+      - name: X
+        description: "Posição (eixo X) da bomba no momento do evento."
+      - name: Y
+        description: "Posição (eixo Y) da bomba no momento do evento."
+      - name: Z
+        description: "Posição (eixo Z) da bomba no momento do evento."
+      - name: steamid
+        description: "{{ doc('col_participante_steamid') }}"
+      - name: match_id
+        description: "{{ doc('col_match_id') }}"
+        tests:
+          - not_null
+      - name: _arquivo_origem
+        description: "{{ doc('col_arquivo_origem') }}"
+      - name: _camada
+        description: "{{ doc('col_camada') }}"
+      - name: _carregado_em
+        description: "{{ doc('col_carregado_em') }}"
+      - name: _transformado_em
+        description: "{{ doc('col_transformado_em') }}"
+
+  - name: silver_ticks
+    description: >
+      Estado de cada jogador em cada tick capturado (1 linha por jogador
+      por tick — dataframe maior do pipeline). Inclui
+      `segundos_desde_inicio_round` (derivada).
+    columns:
+      - name: tick
+        description: "{{ doc('col_tick') }}"
+      - name: round_num
+        description: "{{ doc('col_round_num') }}"
+      - name: segundos_desde_inicio_round
+        description: "{{ doc('col_segundos_desde_inicio_round') }}"
+      - name: health
+        description: "{{ doc('col_participante_health') }}"
+        tests:
+          - not_null
+      - name: steamid
+        description: "{{ doc('col_participante_steamid') }}"
+        tests:
+          - not_null
+      - name: name
+        description: "{{ doc('col_participante_nome') }}"
+      - name: side
+        description: "{{ doc('col_participante_side') }}"
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['t', 'ct']
+      - name: place
+        description: "{{ doc('col_participante_place') }}"
+      - name: X
+        description: "{{ doc('col_participante_posicao') }}"
+      - name: Y
+        description: "{{ doc('col_participante_posicao') }}"
+      - name: Z
+        description: "{{ doc('col_participante_posicao') }}"
+      - name: match_id
+        description: "{{ doc('col_match_id') }}"
+        tests:
+          - not_null
+      - name: _arquivo_origem
+        description: "{{ doc('col_arquivo_origem') }}"
+      - name: _camada
+        description: "{{ doc('col_camada') }}"
+      - name: _carregado_em
+        description: "{{ doc('col_carregado_em') }}"
+      - name: _transformado_em
+        description: "{{ doc('col_transformado_em') }}"
+
+  - name: silver_cvars
+    description: >
+      Configurações do servidor (cvars) reportadas durante a gravação (1
+      linha por cvar reportada — a mesma cvar aparece centenas de vezes ao
+      longo da demo, normalmente com o mesmo valor).
+    columns:
+      - name: tick
+        description: >
+          Tick em que aquele valor foi reportado. `-1` é um valor
+          sentinela — cvar reportada antes da gravação começar (sem tick
+          associado).
+        tests:
+          - not_null
+      - name: name
+        description: "Nome da configuração do servidor, ex.: `mp_freezetime`, `mp_friendlyfire`, `mp_forcecamera`, `tv_transmitall`."
+        tests:
+          - not_null
+      - name: value
+        description: "Valor da cvar naquele momento (sempre string — pode representar número, `true`/`false`, etc., dependendo da cvar)."
+        tests:
+          - not_null
+      - name: match_id
+        description: "{{ doc('col_match_id') }}"
+        tests:
+          - not_null
+      - name: _arquivo_origem
+        description: "{{ doc('col_arquivo_origem') }}"
+      - name: _camada
+        description: "{{ doc('col_camada') }}"
+      - name: _carregado_em
+        description: "{{ doc('col_carregado_em') }}"
+      - name: _transformado_em
+        description: "{{ doc('col_transformado_em') }}"
+
+  - name: silver_grenades
+    description: >
+      1 linha por tick de vida de uma granada em campo (não 1 por granada
+      lançada). Exclui entidades `CKnife`/`CWeaponGlock` — artefato de
+      parsing do awpy observado numa demo/round específico, não são
+      granadas reais.
+    columns:
+      - name: entity_id
+        description: "Identificador da granada em campo. Reciclado dentro da mesma partida — não usar sozinho para contar granadas físicas (ver granadas_jogador_partida na gold pela chave completa)."
+        tests:
+          - not_null
+      - name: thrower_steamid
+        description: "{{ doc('col_participante_steamid') }}"
+        tests:
+          - not_null
+      - name: thrower
+        description: "{{ doc('col_participante_nome') }}"
+      - name: grenade_type
+        description: >
+          Tipo de entidade bruto do engine. Pares "Grenade"/"Projectile"
+          representam fases diferentes (granada na mão vs. já lançada em
+          voo) da mesma categoria (ver `categoria_granada` na gold para a
+          categoria normalizada).
+        tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - CHEGrenade
+                  - CHEGrenadeProjectile
+                  - CFlashbang
+                  - CFlashbangProjectile
+                  - CSmokeGrenade
+                  - CSmokeGrenadeProjectile
+                  - CMolotovGrenade
+                  - CMolotovProjectile
+                  - CIncendiaryGrenade
+                  - CDecoyGrenade
+                  - CDecoyProjectile
+      - name: tick
+        description: "{{ doc('col_tick') }}"
+      - name: round_num
+        description: "{{ doc('col_round_num') }}"
+      - name: X
+        description: "Posição (eixo X) da granada nesse tick. `NULL` sistematicamente na fase \"na mão\" (antes de ser lançada) — só populado na fase \"Projectile\" (em voo)."
+      - name: Y
+        description: "Posição (eixo Y) da granada nesse tick. Mesmo padrão de nulos de `X`."
+      - name: Z
+        description: "Posição (eixo Z) da granada nesse tick. Mesmo padrão de nulos de `X`."
+      - name: match_id
+        description: "{{ doc('col_match_id') }}"
+        tests:
+          - not_null
+      - name: _arquivo_origem
+        description: "{{ doc('col_arquivo_origem') }}"
+      - name: _camada
+        description: "{{ doc('col_camada') }}"
+      - name: _carregado_em
+        description: "{{ doc('col_carregado_em') }}"
+      - name: _transformado_em
+        description: "{{ doc('col_transformado_em') }}"
+
+  - name: taxa_de_tick_partida
+    description: >
+      View com 1 linha por match_id: taxa de tick real (ticks/segundo),
+      calculada via `MODE(freeze_end - start)` (robusto a outliers de
+      round isolados) dividido pelo `mp_freezetime` do cvar. Não confiar em
+      `dem.tickrate` — pode estar incorreto (ver `karpathy`/CLAUDE.md).
+    columns:
+      - name: match_id
+        description: "{{ doc('col_match_id') }}"
+      - name: taxa_de_tick
+        description: "Ticks por segundo reais dessa partida (ex.: 64, 128)."

@@ -9,11 +9,13 @@ são os tipos **lógicos/de domínio** de cada coluna — o que ela representa
 conceitualmente. Na camada `bronze` (`output/cs2.duckdb`, schema `bronze`),
 **todas as colunas são gravadas como `VARCHAR`**, sem nenhum cast — ver
 "Arquitetura de camadas" no `CLAUDE.md`. A camada `silver` (schema `silver`,
-populado por `src/transformar_silver_duckdb.py`) já faz esse cast pro tipo
+populada pelos models dbt em `dbt/models/silver/`) já faz esse cast pro tipo
 DuckDB correspondente (`VARCHAR`, `INTEGER`, `BIGINT`/`UBIGINT`, `DOUBLE`,
-`BOOLEAN`, `TIMESTAMP`) — o mapeamento coluna → tipo está no dict
-`TIPOS_SILVER` desse script, casado contra este dicionário. Esse dicionário
-continua sendo a referência do tipo lógico/conceitual de cada coluna.
+`BOOLEAN`, `TIMESTAMP`) — o mapeamento coluna → tipo e a descrição de cada
+coluna também estão em `dbt/models/silver/_silver__models.yml` (visível no
+catálogo `dbt docs`), casado contra este dicionário. Esse dicionário
+continua sendo a referência narrativa do tipo lógico/conceitual de cada
+coluna.
 
 ---
 
@@ -45,16 +47,23 @@ continua sendo a referência do tipo lógico/conceitual de cada coluna.
 | `reason` | Motivo do fim do round: `ct_killed`, `t_killed`, `bomb_exploded`, `bomb_defused`, `time_ran_out` |
 | `bomb_plant` | Tick em que a bomba foi plantada nesse round (`NaN` se não foi plantada) |
 | `bomb_site` | Local do plant: `bombsite_a`, `bombsite_b`, ou `not_planted` |
-| `duracao_segundos` | **Coluna que adicionamos** (`src/cs2_utils.py`): `(end - start) / taxa_de_tick`. Atenção ao outlier do round pós-troca-de-lado (ver `CLAUDE.md`) |
+| `duracao_segundos` | **Coluna derivada, adicionada na silver** (`dbt/models/silver/silver_rounds.sql`): `(end - start) / taxa_de_tick`. Atenção ao outlier do round pós-troca-de-lado (ver `CLAUDE.md`) |
 
 ---
 
 ## `kills` — 1 linha por abate
 
+**Na silver**, exclui eventos de reinício de round/pausa técnica (2+
+jogadores "matando a si mesmos" com `weapon = 'world'` no mesmo tick —
+artefato do servidor, não morte de jogo real; achado validado contra a
+HLTV, ver `CLAUDE.md`). Ainda inclui team-kills como linha normal — a
+decisão de excluir da métrica "kills" é da camada gold, não da silver.
+
 | Coluna | Significado |
 |---|---|
 | `tick` | Tick em que o abate ocorreu |
 | `round_num` | Round em que ocorreu |
+| `segundos_desde_inicio_round` | **Coluna derivada, adicionada na silver**: segundos desde o tick `start` do round (mesma referência de `rounds.duracao_segundos`, os dois são comparáveis) |
 | `attacker_*` (`name`, `steamid`, `side`, `X`/`Y`/`Z`, `health`, `place`) | Quem deu o abate: nome, steamid, lado (`t`/`ct`), posição no momento do tiro, vida restante, callout do mapa onde estava |
 | `victim_*` (mesmos campos) | Quem morreu |
 | `assister_*` (mesmos campos) | Quem deu assistência (campos vazios/`NaN` se não houve assistência) |
@@ -63,7 +72,7 @@ continua sendo a referência do tipo lógico/conceitual de cada coluna.
 | `weapon_itemid` / `weapon_fauxitemid` | IDs internos do item/skin da arma (rastreamento de economia, raramente necessário em análise) |
 | `weapon_originalowner_xuid` | Steamid do dono original da arma (relevante quando a arma foi pega de outro jogador morto) |
 | `headshot` | `True` se foi headshot |
-| `hitgroup` | Parte do corpo atingida no tiro fatal: `head`, `chest`, `stomach`, `left_arm`, `right_arm`, `right_leg` (`-1` quando não aplicável, ex.: morte por bomba/queda) |
+| `hitgroup` | Parte do corpo atingida no tiro fatal: `head`, `chest`, `stomach`, `left_arm`, `right_arm`, `left_leg`, `right_leg`, `neck`, `generic` (`-1` quando não aplicável, ex.: morte por bomba/queda) — lista validada contra os dados reais das 8 demos carregadas |
 | `distance` | Distância entre atacante e vítima no momento do abate |
 | `dmg_armor` / `dmg_health` | Dano causado à armadura / vida no tiro fatal |
 | `penetrated` | Quantas superfícies (parede, etc.) o tiro atravessou antes de acertar (valores observados: 0, 1, 2) |
@@ -84,6 +93,7 @@ continua sendo a referência do tipo lógico/conceitual de cada coluna.
 | Coluna | Significado |
 |---|---|
 | `tick`, `round_num` | Quando ocorreu |
+| `segundos_desde_inicio_round` | **Coluna derivada, adicionada na silver**: segundos desde o tick `start` do round |
 | `attacker_*` / `victim_*` | Mesma lógica de `kills` (quem causou e quem recebeu o dano) |
 | `weapon` | Arma usada |
 | `hitgroup` | Parte do corpo atingida |
@@ -100,9 +110,9 @@ continua sendo a referência do tipo lógico/conceitual de cada coluna.
 |---|---|
 | `entity_id` | Identificador único da granada em campo — agrupar por esse campo pra reconstruir a trajetória completa de uma granada específica |
 | `thrower_steamid` / `thrower` | Quem lançou |
-| `grenade_type` | Tipo: `CHEGrenade`/`CHEGrenadeProjectile` (HE), `CFlashbang`/`CFlashbangProjectile` (flash), `CSmokeGrenade`/`CSmokeGrenadeProjectile` (smoke), `CMolotovGrenade`/`CMolotovProjectile` (molotov), `CIncendiaryGrenade` (incendiária), `CDecoyGrenade`/`CDecoyProjectile` (decoy). Os pares "Grenade"/"Projectile" representam fases diferentes (granada na mão vs. já lançada em voo) |
+| `grenade_type` | Tipo: `CHEGrenade`/`CHEGrenadeProjectile` (HE), `CFlashbang`/`CFlashbangProjectile` (flash), `CSmokeGrenade`/`CSmokeGrenadeProjectile` (smoke), `CMolotovGrenade`/`CMolotovProjectile` (molotov), `CIncendiaryGrenade` (incendiária), `CDecoyGrenade`/`CDecoyProjectile` (decoy). Os pares "Grenade"/"Projectile" representam fases diferentes (granada na mão vs. já lançada em voo). **Na bronze** também apareceram `CKnife`/`CWeaponGlock` — artefato de parsing do awpy (confirmado numa única partida/round, 1 entidade cada), filtrado na silver (`silver_grenades.sql`), não são granadas de verdade |
 | `tick` | Tick daquele instante de vida da granada |
-| `X` / `Y` / `Z` | Posição da granada naquele tick (pode vir `NaN` nos primeiros ticks, antes da posição ser resolvida — ver `CLAUDE.md`) |
+| `X` / `Y` / `Z` | Posição da granada naquele tick. **Padrão de nulo é determinístico, não aleatório**: sempre `NaN` na fase "na mão" (`grenade_type` sem sufixo `Projectile`) e sempre populado na fase "em voo" (sufixo `Projectile`) — confirmado varrendo todas as ~20M linhas da silver, não é só "primeiros ticks" |
 | `round_num` | Round em que ocorreu |
 
 ---
@@ -112,6 +122,7 @@ continua sendo a referência do tipo lógico/conceitual de cada coluna.
 | Coluna | Significado |
 |---|---|
 | `tick`, `round_num` | Quando ocorreu |
+| `segundos_desde_inicio_round` | **Coluna derivada, adicionada na silver**: segundos desde o tick `start` do round |
 | `player_*` (`name`, `steamid`, `side`, `X`/`Y`/`Z`, `health`, `place`) | Quem disparou e seu estado/posição no momento |
 | `weapon` | Arma disparada |
 | `silenced` | `True` se a arma estava com silenciador equipado |
@@ -124,10 +135,11 @@ continua sendo a referência do tipo lógico/conceitual de cada coluna.
 | Coluna | Significado |
 |---|---|
 | `tick`, `round_num` | Quando ocorreu |
-| `event` | Tipo do evento: `pickup` (pegou a bomba), `drop` (largou), `plant` (plantou), `detonate` (explodiu). Defuse não aparece como evento próprio nessa lista observada — conferir via `rounds.reason == 'bomb_defused'` |
+| `segundos_desde_inicio_round` | **Coluna derivada, adicionada na silver**: segundos desde o tick `start` do round |
+| `event` | Tipo do evento: `pickup` (pegou a bomba), `drop` (largou), `plant` (plantou), `defuse` (defusou), `detonate` (explodiu). **Correção**: uma versão anterior desta doc dizia que `defuse` não aparecia — confirmado nos dados reais (awpy 2.0.2) que aparece, com `steamid` de quem defusou. `gold.bomba_jogador_partida` ainda não usa isso (ver "Próximos passos" no `CLAUDE.md`) |
 | `X` / `Y` / `Z` | Posição da bomba no evento |
 | `steamid` / `name` | Jogador envolvido no evento |
-| `bombsite` | Site relacionado (`bombsite_a/b`), quando aplicável |
+| `bombsite` | Site relacionado (`BombsiteA`/`BombsiteB`, PascalCase), quando aplicável — `NULL` em eventos sem site (pickup/drop/detonate). **Atenção**: grafia diferente de `rounds.bomb_site` (`bombsite_a`/`bombsite_b`, snake_case) — mesmo conceito, casing diferente entre as duas colunas |
 
 ---
 
@@ -137,6 +149,7 @@ continua sendo a referência do tipo lógico/conceitual de cada coluna.
 |---|---|
 | `tick` | Tick do servidor naquele instante (ver `CLAUDE.md` pra conversão em segundos) |
 | `round_num` | Round em que esse tick ocorreu |
+| `segundos_desde_inicio_round` | **Coluna derivada, adicionada na silver**: segundos desde o tick `start` do round |
 | `steamid` / `name` | Jogador |
 | `side` | Lado nesse tick: `t` ou `ct` |
 | `health` | Vida do jogador nesse instante |
@@ -156,16 +169,19 @@ continua sendo a referência do tipo lógico/conceitual de cada coluna.
 - O servidor repete a emissão das mesmas cvars periodicamente durante a
   demo (por isso a mesma `name` aparece centenas de vezes, normalmente com
   o mesmo `value`).
-- `mp_freezetime` é a usada por `detectar_taxa_de_tick` (`src/cs2_utils.py`)
-  pra calcular a taxa real de tick da demo — ver `CLAUDE.md`.
+- `mp_freezetime` é a usada pela macro dbt `taxa_de_tick_por_partida()`
+  (`dbt/macros/taxa_de_tick_por_partida.sql`) pra calcular a taxa real de
+  tick da demo — ver `CLAUDE.md`. Equivalente em Python:
+  `detectar_taxa_de_tick` (`ingestion/cs2_utils.py`), não usada pelo
+  pipeline hoje (ver "Utilitários reutilizáveis" no `CLAUDE.md`).
 
 ---
 
 ## Metadados adicionados pelo pipeline (não vêm do `awpy`)
 
 Colunas presentes em **todas** as tabelas (inclusive `header`), adicionadas
-por `src/carregar_demo_duckdb.py` durante a carga — não fazem parte do que o
-`awpy` extrai da demo:
+por `ingestion/carregar_demo_duckdb.py` durante a carga — não fazem parte do
+que o `awpy` extrai da demo:
 
 | Coluna | Significado |
 |---|---|
@@ -173,24 +189,25 @@ por `src/carregar_demo_duckdb.py` durante a carga — não fazem parte do que o
 | `_arquivo_origem` | Caminho do `.dem` de onde aquela linha veio, relativo a `./demos/`. Numa partida dividida em partes (`-p1`/`-p2`), cada parte mantém seu próprio `_arquivo_origem` mesmo depois de mescladas |
 | `_camada` | Nome da camada que gravou a linha (hoje sempre `"bronze"`) |
 | `_carregado_em` | Timestamp de quando a carga rodou — igual para todas as linhas de todas as tabelas de uma mesma execução do script |
-| `_transformado_em` | **Só na silver** (não vem da bronze): timestamp de quando a transformação silver rodou — igual para todas as linhas de todas as tabelas de uma mesma execução de `src/transformar_silver_duckdb.py` |
-| `_gerado_em` | **Só na gold** (não vem da silver): timestamp de quando a geração gold rodou — igual para todas as linhas de todas as tabelas de uma mesma execução de `src/gerar_gold_duckdb.py` |
+| `_transformado_em` | **Só na silver** (não vem da bronze): timestamp de quando a transformação silver rodou — igual para todas as linhas de todas as tabelas de uma mesma execução do `dbt run` |
+| `_gerado_em` | **Só na gold** (não vem da silver): timestamp de quando a geração gold rodou — igual para todas as linhas de todas as tabelas de uma mesma execução do `dbt run` |
 
 ---
 
-## Camada gold (`src/gerar_gold_duckdb.py`)
+## Camada gold (`dbt/models/gold/`)
 
 Grão: **1 linha por jogador por partida** (`match_id` + `steamid`, ou
 `match_id` + `steamid` + uma dimensão extra quando faz sentido). Tudo
 derivado da silver, sem reabrir o `.dem`. Ver "Arquitetura de camadas" no
-`CLAUDE.md` para o desenho completo (idempotência, decisões, limitações).
+`CLAUDE.md` para o desenho completo (idempotência, decisões, limitações) e
+`dbt/models/gold/_gold__models.yml` pra descrição coluna a coluna.
 
 | Tabela | Grão | Colunas próprias |
 |---|---|---|
-| `gold.combate_jogador_partida` | match_id, steamid | `nome`, `kills`, `headshots`, `hs_pct`, `mortes`, `assistencias`, `dano_causado`, `dano_recebido` |
+| `gold.combate_jogador_partida` | match_id, steamid | `nome`, `kills`, `headshots`, `hs_pct`, `mortes`, `assistencias`, `team_kills`, `dano_causado`, `dano_recebido`. `kills`/`headshots` excluem team-kills (fogo amigo não conta como abate, mesmo critério da HLTV — validado campo a campo); `mortes` conta qualquer morte real, inclusive por companheiro. Também exclui um artefato de reinício de round/pausa técnica identificado na silver (ver `CLAUDE.md`) |
 | `gold.granadas_jogador_partida` | match_id, steamid, categoria_granada | `nome`, `granadas_lancadas` |
 | `gold.posicionamento_jogador_partida` | match_id, steamid, place | `nome`, `qtd_ticks`, `segundos_no_local` |
-| `gold.bomba_jogador_partida` | match_id, steamid | `nome`, `plants` (defuses não são atribuíveis a um jogador — ver limitação no `CLAUDE.md`) |
+| `gold.bomba_jogador_partida` | match_id, steamid | `nome`, `plants` (defuses não são atribuídos a um jogador ainda — o dado já existe em `silver.bomb.event = 'defuse'`, falta implementar; ver "Próximos passos" no `CLAUDE.md`) |
 
 `gold.dim_partida` (view): `match_id`, `evento`, `fase` (extraídos do
 próprio `match_id`) e `mapa` (de `silver.header.map_name` — mapa real
@@ -202,6 +219,10 @@ Views de ranking (sem armazenamento próprio, somam as tabelas acima por
 - Por fase (semi-final, final, ...) dentro do evento: `gold.ranking_kills_por_fase`, `gold.ranking_granadas_por_fase`, `gold.ranking_tempo_por_local_por_fase`
 - Por campeonato inteiro (soma todas as fases): `gold.ranking_kills_por_evento`, `gold.ranking_granadas_por_evento`, `gold.ranking_tempo_por_local_por_evento`
 - Por mapa, cruzando evento/fase (ex.: "fulano é melhor em qual mapa"): `gold.ranking_kills_por_mapa`, `gold.ranking_granadas_por_mapa`, `gold.ranking_tempo_por_local_por_mapa` (esta última agrupa por `mapa` + `place`, já que o mesmo callout existe em mapas diferentes)
+
+`gold.ranking_team_kills` (só total geral, sem variantes por fase/evento/mapa
+ainda): total de fogo amigo por jogador. Diferente das demais views de
+ranking, só lista quem tem pelo menos 1 team-kill.
 
 `hs_pct` = `headshots / kills` (`NULL` quando `kills = 0`, não `0` — "sem
 kills" é diferente de "0% de headshot").
@@ -220,5 +241,8 @@ kills" é diferente de "0% de headshot").
 - `*_place` = callout/área do mapa (nome dado pelo level design, ex.:
   `BombsiteB`, `Connector`). Não confundir com `bombsite` (que é
   especificamente `bombsite_a`/`bombsite_b`).
-- Datas/tempo sempre vêm como `tick` (inteiro), nunca em segundos por
-  padrão — conversão é manual (`src/cs2_utils.py`).
+- Datas/tempo sempre vêm como `tick` (inteiro) na bronze. Na silver, as
+  tabelas de evento (`rounds`, `kills`, `damages`, `shots`, `bomb`,
+  `ticks`) já trazem a conversão pronta (`duracao_segundos` /
+  `segundos_desde_inicio_round`, ver seções acima) — conversão manual
+  (`ingestion/cs2_utils.py`) só é necessária fora do pipeline dbt.
