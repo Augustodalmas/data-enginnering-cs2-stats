@@ -113,10 +113,8 @@ models:
 
   - name: bomba_jogador_partida
     description: >
-      Fato de bomba, grão jogador × partida: só `plants` por jogador.
-      Defuses não são atribuídos a um jogador aqui — ver observação no
-      model `silver_bomb` sobre o evento `defuse` existir nos dados, mas
-      essa atribuição ainda não foi implementada nesta tabela.
+      Fato de bomba, grão jogador × partida: `plants` e `defuses` por
+      jogador, a partir de `silver.bomb.event IN ('plant', 'defuse')`.
     columns:
       - name: match_id
         description: "{{ doc('col_match_id') }}"
@@ -130,6 +128,49 @@ models:
         description: "{{ doc('col_gold_nome') }}"
       - name: plants
         description: "Quantidade de plants feitos pelo jogador na partida."
+      - name: defuses
+        description: "Quantidade de defuses feitos pelo jogador na partida."
+      - name: _camada
+        description: "{{ doc('col_camada') }}"
+      - name: _gerado_em
+        description: "{{ doc('col_gerado_em') }}"
+
+  - name: clutches_jogador_partida
+    description: >
+      Fato de clutch (1vX), grão jogador × partida. Um jogador "vira" clutch
+      quando seu time cai a exatamente 1 sobrevivente (via saldo acumulado
+      de mortes por `tick` em `silver.kills`, agregado por tick para tratar
+      corretamente 2+ mortes simultâneas — ex.: bomba matando 2 jogadores no
+      mesmo instante não gera situação de clutch, pois o saldo pula de 2
+      vivos pra 0 sem passar por 1) enquanto o time adversário ainda tem
+      pelo menos 1 jogador vivo naquele momento (o "X"). Resultado
+      (vencido/perdido) vem de `silver.rounds.winner`, independente de como
+      o round terminou (kill decisivo, defuse, bomba explodindo, tempo).
+    columns:
+      - name: match_id
+        description: "{{ doc('col_match_id') }}"
+        tests:
+          - not_null
+      - name: steamid
+        description: "{{ doc('col_gold_steamid') }}"
+        tests:
+          - not_null
+      - name: nome
+        description: "{{ doc('col_gold_nome') }}"
+      - name: clutches_tentados
+        description: "Quantidade de vezes que o jogador ficou em situação de 1vX (vencendo ou não)."
+      - name: clutches_vencidos
+        description: "Quantidade de clutches vencidos (o time do jogador venceu o round)."
+      - name: clutches_1v1_vencidos
+        description: "Clutches vencidos com exatamente 1 inimigo vivo no momento em que ficou sozinho."
+      - name: clutches_1v2_vencidos
+        description: "Clutches vencidos com exatamente 2 inimigos vivos no momento em que ficou sozinho."
+      - name: clutches_1v3_vencidos
+        description: "Clutches vencidos com exatamente 3 inimigos vivos no momento em que ficou sozinho."
+      - name: clutches_1v4_vencidos
+        description: "Clutches vencidos com exatamente 4 inimigos vivos no momento em que ficou sozinho."
+      - name: clutches_1v5_vencidos
+        description: "Clutches vencidos com exatamente 5 inimigos vivos no momento em que ficou sozinho."
       - name: _camada
         description: "{{ doc('col_camada') }}"
       - name: _gerado_em

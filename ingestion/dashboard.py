@@ -107,8 +107,12 @@ with aba_posicionamento:
     st.dataframe(ranking_p.sort_values("segundos_no_local", ascending=False), use_container_width=True)
 
 with aba_bomba:
-    ranking_b = bomba_f.groupby(["nome"], as_index=False)["plants"].sum().sort_values(
-        "plants", ascending=False)
+    ranking_b = bomba_f.groupby(["nome"], as_index=False)[["plants", "defuses"]].sum()
+
     st.subheader("Plants de bomba")
-    st.bar_chart(ranking_b.set_index("nome")["plants"])
-    st.dataframe(ranking_b, use_container_width=True)
+    st.bar_chart(ranking_b.sort_values("plants", ascending=False).set_index("nome")["plants"])
+
+    st.subheader("Defuses de bomba")
+    st.bar_chart(ranking_b.sort_values("defuses", ascending=False).set_index("nome")["defuses"])
+
+    st.dataframe(ranking_b.sort_values("plants", ascending=False), use_container_width=True)
