@@ -1,0 +1,86 @@
+# Stack da API de consumo (ver CLAUDE.md, seção "API de consumo"):
+# Nginx (load balancer round-robin) -> 3 réplicas da API (Django/DRF) ->
+# Parquet exportado da gold (nunca o cs2.duckdb, ver ingestion/
+# exportar_gold_parquet.py) + Redis (cache dos GETs) + worker Celery
+# (processa upload de demo em background, evitando travar um dos 3
+# workers da API por minutos durante o parse).
+#
+# Uso:
+#   1. .venv/Scripts/python.exe ingestion/exportar_gold_parquet.py
+#   2. cp api/.env.example api/.env
+#   3. docker compose up -d --build --scale api=3
+#   API disponível em http://localhost:8080/api/...
+#
+# --scale api=3 (não 3 serviços fixos api1/api2/api3): nginx open-source
+# não suporta re-resolver DNS de um upstream {} estático (isso é recurso
+# exclusivo do Nginx Plus) -- com 3 serviços de nome fixo, toda vez que uma
+# réplica é recriada (rebuild/restart) ela ganha um IP interno novo e o
+# nginx passa a dar "connect() failed (Connection refused)" pra esse
+# backend até o próprio nginx ser reiniciado manualmente (reproduzido na
+# prática). Com as 3 réplicas sob o MESMO nome de serviço ("api"), o DNS
+# interno do Docker resolve esse nome pra todos os IPs vivos daquele
+# serviço, e o nginx.conf usa "resolver" + variável (ver nginx/nginx.conf)
+# pra re-resolver a cada poucos segundos em vez de só na inicialização —
+# resolve o problema de vez, sem precisar reiniciar nada manualmente.
+
+x-api-common: &api-common
+  build:
+    context: .
+    dockerfile: api/Dockerfile
+  env_file:
+    - api/.env
+  environment:
+    REDIS_URL: redis://redis:6379/0
+    CELERY_BROKER_URL: redis://redis:6379/0
+    CELERY_RESULT_BACKEND: redis://redis:6379/0
+  volumes:
+    # api_uploads/: área de staging isolada pro upload via API (view grava,
+    # worker apaga depois de carregar) -- de propósito NUNCA demos/, pra
+    # eliminar de vez a chance de um upload colidir e apagar uma demo real
+    # que o usuário guarda manualmente (já aconteceu, ver cs2api/tasks.py).
+    # demos/ não é montado em nenhum container por causa disso.
+    #
+    # output/: o worker escreve output/cs2.duckdb (bronze) e a API só lê
+    # output/parquet/gold/*.parquet (nunca o .duckdb — ver duckdb_consulta.py).
+    - ./api_uploads:/app/api_uploads
+    - ./output:/app/output
+  depends_on:
+    - redis
+  restart: unless-stopped
+
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+
+  # Sem "container_name" de propósito: precisa ficar livre pro Compose
+  # numerar (api-1, api-2, api-3) quando escalado com --scale api=3.
+  api:
+    <<: *api-common
+
+  celery_worker:
+    <<: *api-common
+    # --concurrency=1 é obrigatório, não só uma opção de performance: o
+    # DuckDB só permite 1 processo leitor-escritor por vez (ver CLAUDE.md).
+    # Com concorrência >1, dois uploads processados ao mesmo tempo colidem
+    # tentando abrir output/cs2.duckdb em modo leitor-escritor -- um deles
+    # falha com "Could not set lock on file" (reproduzido testando upload
+    # de .zip com 2 partidas: a 2ª task, rodando em paralelo, falhou assim).
+    # Jobs enfileirados em paralelo continuam sendo processados, só que em
+    # série, um de cada vez -- não se perde nenhum, só demora mais.
+    command: ["celery", "-A", "config", "worker", "--loglevel=info", "--concurrency=1"]
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - api
+
+volumes:
+  redis_data:

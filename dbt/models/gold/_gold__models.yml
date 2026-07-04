@@ -3,9 +3,23 @@ version: 2
 models:
   - name: dim_partida
     description: >
-      Dimensão de partida (view): match_id, evento, fase, mapa. Centraliza
-      a extração de evento/fase/mapa para as views `_por_fase`/`_por_evento`/
+      Dimensão de partida (view): match_id, evento, fase, mapa, confronto_id,
+      jogo_num, formato, time_1, time_2. Centraliza a extração de
+      evento/fase/mapa/times para as views `_por_fase`/`_por_evento`/
       `_por_mapa` não duplicarem a lógica.
+      confronto_id/jogo_num/formato/time_1/time_2 são derivados do nome do
+      arquivo .dem (terceiro segmento do match_id): arquivos com sufixo
+      `-mN-` (ex.: `furia-vs-falcons-m1-mirage`) pertencem a um confronto de
+      múltiplos mapas (série) — `confronto_id` agrupa todos os jogos dessa
+      série (evento/fase/times, sem o `-mN-mapa`) e `jogo_num` é o N
+      extraído. Arquivos sem esse sufixo (ex.: `faze-vs-mibr-ancient`, só
+      times-mapa) são partida única — `confronto_id` é o match_id inteiro e
+      `jogo_num` é sempre 1. `formato` é heurística baseada na fase: sem
+      sufixo `-mN-` = MD1; com sufixo e fase = 'final' = MD5; com sufixo em
+      qualquer outra fase = MD3. Não é derivado da contagem real de mapas
+      (3 mapas carregados podem ser um MD3 decidido 2-1 ou um MD5 decidido
+      3-0) — depende da convenção de que finais são MD5 e as demais fases
+      MD3, que pode não valer pra todo campeonato.
     columns:
       - name: match_id
         description: "{{ doc('col_match_id') }}"
@@ -18,6 +32,76 @@ models:
         description: "{{ doc('col_fase') }}"
       - name: mapa
         description: "{{ doc('col_mapa') }}"
+      - name: confronto_id
+        description: >
+          Identifica a série de mapas (evento/fase/times), agrupando todos
+          os jogos de um mesmo confronto MD3/MD5 sob a mesma chave. Para
+          confrontos MD1, é igual ao match_id.
+      - name: jogo_num
+        description: >
+          Número do mapa dentro da série (1, 2, 3...), extraído do sufixo
+          `-mN-` do nome do arquivo. Sempre 1 para confrontos MD1.
+      - name: formato
+        description: >
+          'MD1', 'MD3' ou 'MD5' — ver heurística na descrição do model.
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['MD1', 'MD3', 'MD5']
+      - name: time_1
+        description: >
+          Nome (slug) do primeiro time no nome do arquivo (ex.: "furia" em
+          "furia-vs-falcons-m1-mirage"). Existe pra distinguir confrontos
+          diferentes que caem no mesmo evento/fase/mapa nos filtros do
+          dashboard (ex.: duas séries diferentes de grupos jogando o mesmo
+          mapa) — sem isso, `evento + fase + mapa` sozinhos não bastam pra
+          filtrar um confronto específico. A ordem no nome do arquivo é
+          arbitrária (confirmado com o usuário) — não indica lado inicial
+          (CT/T) nem qualquer hierarquia entre os times, é só um dos dois
+          nomes da dupla. Não confundir com `equipe` de
+          `dim_jogador_partida`: aqui é o nome real do time; lá é um rótulo
+          genérico (team_a/team_b) sem correspondência confirmada com
+          time_1/time_2 (não há dado que ligue nome real a lado inicial).
+      - name: time_2
+        description: >
+          Nome (slug) do segundo time no nome do arquivo. Ver `time_1`.
+
+  - name: dim_jogador_partida
+    description: >
+      Dimensão jogador × partida: a qual equipe (team_a/team_b) cada
+      jogador pertenceu naquela partida. O awpy não expõe o nome real do
+      time em nenhuma tabela (`ct_side`/`t_side` vêm sempre fixos como
+      `"ct"`/`"t"` — ver `docs/dicionario_dados.md`), então `equipe` é um
+      rótulo genérico, não o nome real do time (ex.: "FURIA"). Derivado do
+      lado (CT/T) do jogador na primeira rodada em que ele aparece na
+      partida: como o roster de cada time é fixo durante toda a partida
+      (só o lado troca no intervalo), o lado inicial já identifica o time
+      em relação ao adversário. team_a = começou do lado CT, team_b =
+      começou do lado T. Rótulo estável dentro da mesma partida, mas não
+      comparável entre partidas diferentes (team_a numa partida não tem
+      relação com team_a de outra). Caveat: um jogador que só entra em
+      campo após a troca de lado (substituição tardia) seria rotulado
+      errado — não observado nos dados atuais, mas é uma limitação da
+      heurística.
+    columns:
+      - name: match_id
+        description: "{{ doc('col_match_id') }}"
+        tests:
+          - not_null
+      - name: steamid
+        description: "{{ doc('col_gold_steamid') }}"
+        tests:
+          - not_null
+      - name: nome
+        description: "{{ doc('col_gold_nome') }}"
+      - name: equipe
+        description: >
+          'team_a' ou 'team_b' — rótulo genérico de equipe dentro da
+          partida, ver descrição do model.
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['team_a', 'team_b']
 
   - name: combate_jogador_partida
     description: >

@@ -70,7 +70,7 @@ decisão de excluir da métrica "kills" é da camada gold, não da silver.
 | `assistedflash` | `True` se a assistência foi via flashbang (assister cegou a vítima) |
 | `weapon` | Arma usada no abate |
 | `weapon_itemid` / `weapon_fauxitemid` | IDs internos do item/skin da arma (rastreamento de economia, raramente necessário em análise) |
-| `weapon_originalowner_xuid` | Steamid do dono original da arma (relevante quando a arma foi pega de outro jogador morto) |
+| `weapon_originalowner_xuid` | Steamid do dono original da arma (relevante quando a arma foi pega de outro jogador morto). **Sempre `NULL` nos dados atuais** — confirmado 0/2.792 kills preenchidos nas 19 partidas carregadas (2 eventos), não é ausência de pickup: o awpy (2.0.2) parece não popular esse campo em nenhum caso. Não usar essa coluna pra identificar arma pega de outro jogador até isso mudar numa versão futura do awpy |
 | `headshot` | `True` se foi headshot |
 | `hitgroup` | Parte do corpo atingida no tiro fatal: `head`, `chest`, `stomach`, `left_arm`, `right_arm`, `left_leg`, `right_leg`, `neck`, `generic` (`-1` quando não aplicável, ex.: morte por bomba/queda) — lista validada contra os dados reais das 8 demos carregadas |
 | `distance` | Distância entre atacante e vítima no momento do abate |

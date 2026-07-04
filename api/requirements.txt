@@ -1,0 +1,14 @@
+Django==5.2.15
+djangorestframework==3.17.1
+duckdb
+pandas
+celery==5.6.3
+redis==8.0.1
+django-redis==7.0.0
+python-dotenv==1.2.2
+gunicorn
+# Usados só pelo worker Celery (parse de .dem, ver cs2api/tasks.py) --
+# mantidos no mesmo requirements.txt pra web e worker usarem a mesma imagem
+# Docker (ver Dockerfile), mais simples de manter que duas imagens.
+awpy==2.0.2
+pyarrow==24.0.0
