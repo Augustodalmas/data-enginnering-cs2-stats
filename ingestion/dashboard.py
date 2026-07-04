@@ -38,14 +38,37 @@ evento_sel = st.sidebar.multiselect("Evento", eventos, default=eventos)
 fases_disponiveis = sorted(dim_partida.loc[dim_partida["evento"].isin(evento_sel), "fase"].unique())
 fase_sel = st.sidebar.multiselect("Fase", fases_disponiveis, default=fases_disponiveis)
 
+# Confronto (time_1 vs time_2): necessário pra distinguir séries diferentes
+# que caem no mesmo evento+fase+mapa — evento/fase/mapa sozinhos não bastam
+# (ex.: duas séries de grupos jogando o mesmo mapa colidiriam no gráfico).
+dim_partida["confronto_label"] = dim_partida["time_1"] + " vs " + dim_partida["time_2"]
+confrontos_disponiveis = dim_partida.loc[
+    dim_partida["evento"].isin(evento_sel) & dim_partida["fase"].isin(fase_sel),
+    ["confronto_id", "confronto_label"],
+].drop_duplicates().sort_values("confronto_label")
+confronto_sel = st.sidebar.multiselect(
+    "Confronto",
+    confrontos_disponiveis["confronto_id"],
+    default=list(confrontos_disponiveis["confronto_id"]),
+    format_func=lambda cid: confrontos_disponiveis.set_index("confronto_id").loc[cid, "confronto_label"],
+)
+
 mapas_disponiveis = sorted(dim_partida.loc[
-    dim_partida["evento"].isin(evento_sel) & dim_partida["fase"].isin(fase_sel), "mapa"
+    dim_partida["evento"].isin(evento_sel)
+    & dim_partida["fase"].isin(fase_sel)
+    & dim_partida["confronto_id"].isin(confronto_sel),
+    "mapa",
 ].unique())
 mapa_sel = st.sidebar.multiselect("Mapa", mapas_disponiveis, default=mapas_disponiveis)
 
 
 def filtrar(df):
-    return df[df["evento"].isin(evento_sel) & df["fase"].isin(fase_sel) & df["mapa"].isin(mapa_sel)]
+    return df[
+        df["evento"].isin(evento_sel)
+        & df["fase"].isin(fase_sel)
+        & df["confronto_id"].isin(confronto_sel)
+        & df["mapa"].isin(mapa_sel)
+    ]
 
 
 combate_f = filtrar(combate)
