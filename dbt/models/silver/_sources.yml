@@ -2,6 +2,15 @@ version: 2
 
 sources:
   - name: bronze
+    # Bronze deixou de ser tabela DuckDB — agora é Parquet particionado por
+    # match_id (evento/fase/confronto) em output/parquet/bronze/<tabela>/,
+    # escrito direto pelo ingestion/carregar_demo_duckdb.py (ver CLAUDE.md,
+    # "Migração pra Parquet"). external_location resolve {{ source('bronze',
+    # 'X') }} pra um read_parquet() em vez de uma tabela do schema bronze;
+    # union_by_name=true porque colunas de uma mesma tabela podem vir em
+    # ordens diferentes entre demos (ex.: header).
+    meta:
+      external_location: "read_parquet('../output/parquet/bronze/{identifier}/**/*.parquet', union_by_name=true)"
     schema: bronze
     tables:
       - name: header

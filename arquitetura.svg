@@ -1,6 +1,6 @@
 <svg width="100%" viewBox="0 0 1160 600" role="img" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, Arial, sans-serif">
 <title>Arquitetura do projeto CS2 Data Engineering</title>
-<desc>Pipeline medalhão (bronze/silver/gold) em dbt+DuckDB, exportação pra Parquet, e uma API Django/DRF (3 réplicas) servida atrás de um load balancer Nginx, com cache Redis e upload assíncrono de demos via Celery. A API (qualquer uma das 3 réplicas) lê o Parquet exportado e fala com o Redis (cache no GET, fila no POST). O POST segue Cliente → Nginx → API → Redis (fila) → Celery worker → Ingestão (Bronze).</desc>
+<desc>Pipeline medalhão (bronze em Parquet; silver/gold em dbt+DuckDB), exportação da gold pra Parquet, e uma API Django/DRF (3 réplicas) servida atrás de um load balancer Nginx, com cache Redis e upload assíncrono de demos via Celery. A API (qualquer uma das 3 réplicas) lê o Parquet exportado e fala com o Redis (cache no GET, fila no POST). O POST segue Cliente → Nginx → API → Redis (fila) → Celery worker → Ingestão (Bronze Parquet).</desc>
 
 <defs>
   <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
@@ -21,7 +21,8 @@
 <text x="40" y="44" font-size="13" font-weight="700" fill="#3d3d3a">PIPELINE DE DADOS (batch — dbt + DuckDB, roda sob demanda)</text>
 
 <rect x="40" y="60" width="200" height="50" rx="8" fill="#f1efe8" stroke="#5f5e5a" stroke-width="0.75"/>
-<text x="140" y="90" text-anchor="middle" font-size="14" font-weight="700" fill="#3d3d3a">Ingestão</text>
+<text x="140" y="84" text-anchor="middle" font-size="14" font-weight="700" fill="#3d3d3a">Ingestão</text>
+<text x="140" y="101" text-anchor="middle" font-size="10" fill="#5f5e5a">→ Bronze (Parquet)</text>
 
 <line x1="240" y1="85" x2="284" y2="85" stroke="#5f5e5a" stroke-width="1.5" marker-end="url(#arrow)"/>
 
