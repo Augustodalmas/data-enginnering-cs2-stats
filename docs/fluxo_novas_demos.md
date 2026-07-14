@@ -1,34 +1,23 @@
 # Fluxo: adicionar novas demos ao projeto
 
-Duas formas de carregar uma demo nova. As duas terminam na bronze — dali
-em diante o processo é o mesmo (passo 3).
+**Única forma suportada: upload via API.** A CLI
+(`ingestion/carregar_demo_duckdb.py`) ainda existe no código — é reusada
+internamente pelo worker Celery — mas não é mais um fluxo recomendado
+pra carregar demos manualmente; use sempre o upload da API.
 
-## Opção A — CLI manual
-
-1. Colocar a(s) `.dem` em `./demos/<evento>/<fase>/` (subpasta obrigatória
-   — é dela que o `match_id` é derivado).
-2. Carregar na bronze:
-   ```
-   .venv/Scripts/python.exe ingestion/carregar_demo_duckdb.py [caminho_do_dem]
-   ```
-   Sem argumento, acha a primeira `.dem` em `./demos/` recursivamente.
-   Idempotente (pula `match_id` já carregado; `--forcar` recarrega). Não
-   toca no `.duckdb` (bronze é Parquet) — só é preciso fechar `duckdb_ui.py`
-   antes do passo 3, que sim usa o DuckDB (silver/gold).
-
-## Opção B — API de upload
+## Upload via API
 
 1. `POST /api/demos/` (multipart: `evento`, `fase`, `arquivo` — um `.dem`
    único ou um `.zip` com várias, inclusive partes `-p1`/`-p2` da mesma
    partida — `forcar` opcional) → 202 com `job_id`.
-2. `GET /api/demos/status/<job_id>/` até concluir. O worker Celery já
-   rodou o mesmo `carregar_demo` da CLI (parse + merge de partes +
-   idempotência) e a demo está na bronze; o(s) `.dem` já foram descartados
-   (área de upload é efêmera, separada de `demos/`).
+2. `GET /api/demos/status/<job_id>/` até concluir. O worker Celery roda
+   `carregar_demo` (parse + merge de partes + idempotência) e a demo fica
+   na bronze; o(s) `.dem` já foram descartados (área de upload é efêmera,
+   separada de `demos/`).
    Pode repetir esse passo várias vezes (vários uploads/lotes) antes de
    ir pro passo 3 — não precisa rodar o passo 3 a cada upload individual.
 
-## Passo 3 (comum às duas opções) — processar silver/gold e exportar
+## Passo 3 — processar silver/gold e exportar
 
 ```
 cd dbt
@@ -37,9 +26,9 @@ cd dbt
 
 Roda `dbt build` (silver + gold + testes, só reprocessa `match_id` novos,
 incremental) e, se passar, exporta a gold pra
-`output/parquet/gold/*.parquet`. Sem esse passo, uma demo carregada (por
-CLI ou API) fica presa na bronze e invisível pra API de consumo — ela só
-lê a gold já materializada/exportada, nunca a bronze direto.
+`output/parquet/gold/*.parquet`. Sem esse passo, uma demo carregada via
+API fica presa na bronze e invisível pra API de consumo — ela só lê a
+gold já materializada/exportada, nunca a bronze direto.
 
 Aceita `-Select <model>` repassado direto pro `dbt build`, ex.:
 `./build_e_exportar.ps1 -Select silver_kills`.

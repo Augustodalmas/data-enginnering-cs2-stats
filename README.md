@@ -303,34 +303,19 @@ seria frágil e violaria os termos de uso do site. O passo a passo manual:
    `demos/iem-cologne-major-2026/final/furia-vs-falcons-m1-mirage.dem`
    (a subpasta por evento/fase é obrigatória — é dela que o `match_id` é
    derivado, ver `CLAUDE.md`).
-4. Carregue com a CLI (`ingestion/carregar_demo_duckdb.py`) ou via
-   `POST /api/demos/` — ver [Rodando o projeto do zero](#rodando-o-projeto-do-zero)
-   e [`docs/fluxo_novas_demos.md`](docs/fluxo_novas_demos.md) pro fluxo completo.
+4. Carregue via `POST /api/demos/` — **essa é a única forma suportada de
+   adicionar uma demo nova** (decisão deliberada, ver
+   [Rodando o projeto do zero](#rodando-o-projeto-do-zero) e
+   [`docs/fluxo_novas_demos.md`](docs/fluxo_novas_demos.md) pro fluxo
+   completo, incluindo upload de `.zip` em lote).
 
 ## Rodando o projeto do zero
 
-### 1. Ambiente
+O repositório já vem com `output/parquet/gold/*.parquet` versionado —
+dados de exemplo de 22 partidas reais, prontos pra API responder sem
+precisar carregar nenhuma demo antes.
 
-```bash
-python -m venv .venv
-.venv/Scripts/pip install -r requirements.txt
-```
-
-### 2. Pipeline de dados (ingestão → bronze → silver/gold → export)
-
-```bash
-# coloque uma ou mais .dem em demos/<evento>/<fase>/
-
-# 1. ingestão — parseia .dem e grava a bronze em Parquet
-.venv/Scripts/python.exe ingestion/carregar_demo_duckdb.py
-
-# 2. transformação (silver + gold via dbt) + export da gold pra Parquet, num só comando
-cd dbt
-./build_e_exportar.ps1
-cd ..
-```
-
-### 3. API, com scaling (Docker Compose)
+### 1. Subir a API (com dados de exemplo já inclusos)
 
 ```bash
 cp api/.env.example api/.env
@@ -338,8 +323,9 @@ docker compose up -d --build --scale api=3
 ```
 
 A API sobe em `http://localhost:8080/api/...`, atrás do Nginx, já
-balanceando entre as 3 réplicas. Pra escalar pra mais (ou menos)
-réplicas, sem downtime perceptível:
+balanceando entre as 3 réplicas, e já responde aos `GET` com os dados de
+exemplo versionados no repo. Pra escalar pra mais (ou menos) réplicas,
+sem downtime perceptível:
 
 ```bash
 docker compose up -d --build --scale api=6
@@ -357,10 +343,31 @@ docker compose restart celery_worker   # depois de mudar cs2api/tasks.py
 Detalhes completos (rodando sem Docker pra debug local, limitações
 conhecidas do worker) em [`api/README.md`](api/README.md).
 
-### 4. Adicionar demos depois (upload via API em vez de CLI)
+### 2. Adicionar uma demo nova (via API, único fluxo suportado)
+
+```bash
+curl -F "evento=iem-cologne-major-2026" -F "fase=final" \
+     -F "arquivo=@partida.dem" http://localhost:8080/api/demos/
+```
 
 Ver [`docs/fluxo_novas_demos.md`](docs/fluxo_novas_demos.md) pro fluxo
-completo, incluindo `POST /api/demos/` com upload de `.zip` em lote.
+completo (upload único ou `.zip` em lote, acompanhamento do status, e o
+passo seguinte de `dbt build` + export pra tornar os dados novos
+visíveis pela API).
+
+### 3. Rodar o pipeline de dados manualmente (opcional, pra debug/dev)
+
+Só necessário se você quiser rodar transformações dbt localmente (fora
+do fluxo normal via API), ex.: alterar um model:
+
+```bash
+python -m venv .venv
+.venv/Scripts/pip install -r requirements.txt
+
+cd dbt
+./build_e_exportar.ps1
+cd ..
+```
 
 ## Endpoints da API
 

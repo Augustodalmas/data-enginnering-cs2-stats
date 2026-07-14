@@ -1,7 +1,11 @@
 .venv/
 demos/
 api_uploads/
-output/
+output/*
+!output/parquet/
+output/parquet/*
+!output/parquet/gold/
+output/parquet/gold/*__dbt_backup.parquet
 __pycache__/
 *.pyc
 .claude
